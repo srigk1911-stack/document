@@ -1,0 +1,24 @@
+# Virtual Environment
+backend/venv/
+venv/
+.venv/
+env/
+
+# Hugging Face cache
+backend/.cache/
+.cache/
+
+# Python compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# User data and uploads (RAG DB)
+backend/data/uploads/*
+backend/data/db.json
+!backend/data/uploads/.gitkeep
+
+# System files
+.DS_Store
+Thumbs.db
