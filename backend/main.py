@@ -29,7 +29,10 @@ app.add_middleware(
 
 # Directory configurations
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_DIR = os.path.join(BASE_DIR, "data", "uploads")
+if os.environ.get("VERCEL"):
+    UPLOAD_DIR = "/tmp/uploads"
+else:
+    UPLOAD_DIR = os.path.join(BASE_DIR, "data", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 @app.on_event("startup")
