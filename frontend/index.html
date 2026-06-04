@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intelligent Document RAG Dashboard</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+    <div class="app-container">
+        
+        <!-- Left Sidebar (Settings and Ingestion) -->
+        <aside class="sidebar">
+            
+            <!-- Panel 1: Ingestion & Document Warehouse -->
+            <section class="panel">
+                <div class="panel-title">
+                    <span>Document Warehouse</span>
+                </div>
+                
+                <div class="upload-dropzone" id="dropzone" onclick="triggerFileInput()">
+                    <div class="upload-icon">📤</div>
+                    <div class="upload-text">Drag & drop files here or click to browse</div>
+                    <div class="upload-text" style="font-size: 0.7rem; color: var(--text-muted); margin-top: 4px;">Supports PDF, TXT, MD, DOCX</div>
+                    <input type="file" id="fileInput" style="display: none;" onchange="handleFileSelect(event)" accept=".pdf,.txt,.md,.docx">
+                </div>
+
+                <!-- Chunk Size Tweak configuration -->
+                <div style="display: flex; gap: 8px;">
+                    <div class="form-group" style="flex: 1;">
+                        <label class="form-label" for="chunkSizeInput">Chunk Size</label>
+                        <input type="number" id="chunkSizeInput" value="500" min="100" max="2000" step="50">
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label class="form-label" for="chunkOverlapInput">Overlap</label>
+                        <input type="number" id="chunkOverlapInput" value="50" min="0" max="500" step="10">
+                    </div>
+                </div>
+
+                <div id="uploadStatus" style="font-size: 0.75rem; text-align: center; display: none;"></div>
+
+                <div class="form-label" style="margin-top: 4px;">Ingested Documents (<span id="docCount">0</span>)</div>
+                <div class="document-list" id="docList">
+                    <!-- Dynamic Document Items -->
+                    <div style="text-align: center; color: var(--text-muted); font-size: 0.75rem; padding: 12px 0;">No documents ingested yet.</div>
+                </div>
+            </section>
+
+            <!-- Panel 2: RAG Pipeline Configuration -->
+            <section class="panel">
+                <div class="panel-title">
+                    <span>RAG Config</span>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="providerSelect">LLM Generator Provider</label>
+                    <select id="providerSelect" onchange="toggleProviderSettings()">
+                        <option value="mock">Offline Mock (No Keys Required)</option>
+                        <option value="gemini">Google Gemini API</option>
+                        <option value="ollama">Local Ollama</option>
+                    </select>
+                </div>
+
+                <!-- Gemini Config -->
+                <div id="geminiConfig" style="display: none;" class="form-group">
+                    <div class="form-group">
+                        <label class="form-label" for="apiKeyInput">Gemini API Key</label>
+                        <input type="password" id="apiKeyInput" placeholder="AIzaSy..." onchange="saveSettingsToLocal()">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="geminiModelInput">Gemini Model</label>
+                        <input type="text" id="geminiModelInput" value="gemini-1.5-flash" onchange="saveSettingsToLocal()">
+                    </div>
+                </div>
+
+                <!-- Ollama Config -->
+                <div id="ollamaConfig" style="display: none;" class="form-group">
+                    <div class="form-group">
+                        <label class="form-label" for="ollamaModelInput">Ollama Model Name</label>
+                        <input type="text" id="ollamaModelInput" value="llama3" onchange="saveSettingsToLocal()">
+                    </div>
+                </div>
+
+                <!-- Search settings -->
+                <div class="form-group">
+                    <label class="form-label" for="searchModeSelect">Search Mode</label>
+                    <select id="searchModeSelect" onchange="toggleSearchSettings()">
+                        <option value="hybrid">Hybrid (Lexical + Vector)</option>
+                        <option value="vector">Vector Search Only</option>
+                        <option value="lexical">Lexical Search Only</option>
+                    </select>
+                </div>
+
+                <!-- Hybrid Weight slider -->
+                <div class="form-group" id="hybridWeightGroup">
+                    <label class="form-label" for="hybridWeightInput">Hybrid Weight (Vector vs. Lexical)</label>
+                    <div class="slider-group">
+                        <input type="range" id="hybridWeightInput" min="0" max="1" step="0.1" value="0.5" oninput="updateSliderLabel('hybridWeightVal', this.value)">
+                        <span class="slider-value" id="hybridWeightVal">0.5</span>
+                    </div>
+                </div>
+
+                <!-- Retrieval Top K slider -->
+                <div class="form-group">
+                    <label class="form-label" for="topKInput">Retrieve Chunks (Top-K)</label>
+                    <div class="slider-group">
+                        <input type="range" id="topKInput" min="1" max="10" step="1" value="3" oninput="updateSliderLabel('topKVal', this.value)">
+                        <span class="slider-value" id="topKVal">3</span>
+                    </div>
+                </div>
+            </section>
+            
+        </aside>
+
+        <!-- Main Workspace (Chat area & Matched sources) -->
+        <main class="main-workspace">
+            
+            <!-- Top Dashboard Header -->
+            <header class="app-header">
+                <div class="app-title">
+                    <h1>Document RAG Engine</h1>
+                    <p>Retrieve relevant information and generate answers from your concern texts</p>
+                </div>
+                <div class="status-indicator">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="statusText">Checking system...</span>
+                </div>
+            </header>
+
+            <!-- Chat Message Window -->
+            <div class="chat-container">
+                <div class="chat-messages" id="chatMessages">
+                    <div class="message message-bot">
+                        <div class="message-content">Welcome to the **Document RAG System**!
+
+To get started:
+1. Upload some files or concern texts in the **Document Warehouse** sidebar.
+2. Configure your generator provider (you can use **Offline Mock** mode to test the system offline immediately without any API keys).
+3. Type a query in the input box below.
+4. Open the **Retrieval Explorer** at the bottom to inspect retrieved document chunks.</div>
+                    </div>
+                    
+                    <!-- Loading animation -->
+                    <div class="typing-loader" id="chatLoader">
+                        <span></span><span></span><span></span>
+                    </div>
+                </div>
+                
+                <!-- Chat Input area -->
+                <div class="chat-input-bar">
+                    <input type="text" class="chat-input" id="chatInput" placeholder="Ask a question about the ingested documents..." onkeypress="handleKeyPress(event)">
+                    <button class="btn btn-primary" onclick="submitQuery()">Send Query</button>
+                </div>
+            </div>
+
+            <!-- Bottom: Retrieval Explorer -->
+            <div class="retrieval-explorer">
+                <div class="explorer-header">
+                    <div class="explorer-title">
+                        <span>🔍 Retrieval Explorer</span>
+                    </div>
+                </div>
+                <div class="explorer-grid" id="explorerGrid">
+                    <div class="empty-explorer">Submit a query to inspect matched text chunks and similarity scores.</div>
+                </div>
+            </div>
+            
+        </main>
+        
+    </div>
+
+    <script>
+        // DOM Elements
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+        const uploadStatus = document.getElementById('uploadStatus');
+        const docList = document.getElementById('docList');
+        const docCount = document.getElementById('docCount');
+        const providerSelect = document.getElementById('providerSelect');
+        const geminiConfig = document.getElementById('geminiConfig');
+        const apiKeyInput = document.getElementById('apiKeyInput');
+        const geminiModelInput = document.getElementById('geminiModelInput');
+        const ollamaConfig = document.getElementById('ollamaConfig');
+        const ollamaModelInput = document.getElementById('ollamaModelInput');
+        const searchModeSelect = document.getElementById('searchModeSelect');
+        const hybridWeightGroup = document.getElementById('hybridWeightGroup');
+        const hybridWeightInput = document.getElementById('hybridWeightInput');
+        const topKInput = document.getElementById('topKInput');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const chatMessages = document.getElementById('chatMessages');
+        const chatInput = document.getElementById('chatInput');
+        const chatLoader = document.getElementById('chatLoader');
+        const explorerGrid = document.getElementById('explorerGrid');
+        const chunkSizeInput = document.getElementById('chunkSizeInput');
+        const chunkOverlapInput = document.getElementById('chunkOverlapInput');
+
+        // App state
+        let isVectorSearchAvailable = false;
+
+        // Initialize Settings on load
+        window.addEventListener('load', () => {
+            loadSettingsFromLocal();
+            checkSystemStatus();
+            fetchDocuments();
+            
+            // Drag and drop events
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropzone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    dropzone.classList.add('dragover');
+                }, false);
+            });
+            
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropzone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    dropzone.classList.remove('dragover');
+                }, false);
+            });
+            
+            dropzone.addEventListener('drop', (e) => {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                if (files.length > 0) {
+                    uploadFile(files[0]);
+                }
+            });
+        });
+
+        // Toggle configuration sections based on selected model provider
+        function toggleProviderSettings() {
+            const provider = providerSelect.value;
+            geminiConfig.style.display = provider === 'gemini' ? 'block' : 'none';
+            ollamaConfig.style.display = provider === 'ollama' ? 'block' : 'none';
+            saveSettingsToLocal();
+        }
+
+        // Toggle search config slider display
+        function toggleSearchSettings() {
+            const mode = searchModeSelect.value;
+            hybridWeightGroup.style.display = mode === 'hybrid' ? 'block' : 'none';
+        }
+
+        // Update visual labels for range sliders
+        function updateSliderLabel(elementId, val) {
+            document.getElementById(elementId).textContent = val;
+        }
+
+        // Local Storage persistence of settings
+        function saveSettingsToLocal() {
+            const settings = {
+                provider: providerSelect.value,
+                geminiKey: apiKeyInput.value,
+                geminiModel: geminiModelInput.value,
+                ollamaModel: ollamaModelInput.value,
+                searchMode: searchModeSelect.value,
+                hybridWeight: hybridWeightInput.value,
+                topK: topKInput.value,
+                chunkSize: chunkSizeInput.value,
+                chunkOverlap: chunkOverlapInput.value
+            };
+            localStorage.setItem('rag_dashboard_settings', JSON.stringify(settings));
+        }
+
+        function loadSettingsFromLocal() {
+            try {
+                const stored = localStorage.getItem('rag_dashboard_settings');
+                if (stored) {
+                    const settings = JSON.parse(stored);
+                    if (settings.provider) providerSelect.value = settings.provider;
+                    if (settings.geminiKey) apiKeyInput.value = settings.geminiKey;
+                    if (settings.geminiModel) geminiModelInput.value = settings.geminiModel;
+                    if (settings.ollamaModel) ollamaModelInput.value = settings.ollamaModel;
+                    if (settings.searchMode) searchModeSelect.value = settings.searchMode;
+                    if (settings.hybridWeight) {
+                        hybridWeightInput.value = settings.hybridWeight;
+                        updateSliderLabel('hybridWeightVal', settings.hybridWeight);
+                    }
+                    if (settings.topK) {
+                        topKInput.value = settings.topK;
+                        updateSliderLabel('topKVal', settings.topK);
+                    }
+                    if (settings.chunkSize) chunkSizeInput.value = settings.chunkSize;
+                    if (settings.chunkOverlap) chunkOverlapInput.value = settings.chunkOverlap;
+                }
+            } catch (e) {
+                console.error("Failed to load local storage configurations", e);
+            }
+            toggleProviderSettings();
+            toggleSearchSettings();
+        }
+
+        // System Health & Engine capabilities check
+        async function checkSystemStatus() {
+            try {
+                const res = await fetch('/api/settings');
+                if (res.ok) {
+                    const status = await res.json();
+                    isVectorSearchAvailable = status.vector_search_available;
+                    
+                    statusDot.className = 'status-dot online';
+                    if (isVectorSearchAvailable) {
+                        statusText.textContent = `Online (Embeddings Engine Active)`;
+                    } else {
+                        statusText.textContent = `Online (Lexical Fallback Active)`;
+                        // If embeddings model is unavailable, notify in console and configure UI
+                        if (searchModeSelect.value === 'vector' || searchModeSelect.value === 'hybrid') {
+                            searchModeSelect.value = 'lexical';
+                            toggleSearchSettings();
+                        }
+                    }
+                } else {
+                    throw new Error("Invalid response");
+                }
+            } catch (e) {
+                statusDot.className = 'status-dot';
+                statusText.textContent = "Offline (Server Disconnected)";
+            }
+        }
+
+        // Document Warehouse utilities
+        function triggerFileInput() {
+            fileInput.click();
+        }
+
+        function handleFileSelect(e) {
+            const files = e.target.files;
+            if (files.length > 0) {
+                uploadFile(files[0]);
+            }
+        }
+
+        async function uploadFile(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('chunk_size', chunkSizeInput.value);
+            formData.append('chunk_overlap', chunkOverlapInput.value);
+
+            uploadStatus.style.display = 'block';
+            uploadStatus.style.color = 'var(--text-secondary)';
+            uploadStatus.textContent = `Uploading & processing ${file.name}...`;
+
+            try {
+                const res = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    uploadStatus.style.color = 'var(--color-success)';
+                    uploadStatus.textContent = `Success: Indexed ${data.chunks_count} chunks.`;
+                    
+                    // Add standard bot message notifying user
+                    appendBotMessage(`Successfully uploaded and indexed document: **${file.name}** (${data.chunks_count} text chunks generated).`);
+                    
+                    fetchDocuments();
+                    checkSystemStatus();
+                } else {
+                    const err = await res.json();
+                    throw new Error(err.detail || 'Ingestion failed');
+                }
+            } catch (e) {
+                uploadStatus.style.color = 'var(--color-danger)';
+                uploadStatus.textContent = `Error: ${e.message}`;
+            }
+            
+            setTimeout(() => {
+                uploadStatus.style.display = 'none';
+            }, 6000);
+        }
+
+        async function fetchDocuments() {
+            try {
+                const res = await fetch('/api/documents');
+                if (res.ok) {
+                    const docs = await res.json();
+                    docCount.textContent = docs.length;
+                    
+                    if (docs.length === 0) {
+                        docList.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.75rem; padding: 12px 0;">No documents ingested yet.</div>`;
+                        return;
+                    }
+                    
+                    docList.innerHTML = docs.map(doc => `
+                        <div class="document-item" id="doc-${doc.doc_id}">
+                            <div class="document-info">
+                                <div class="document-name" title="${doc.title}">${doc.title}</div>
+                                <div class="document-meta">${doc.chunks_count} chunks | ${(doc.char_count/1024).toFixed(1)} KB</div>
+                            </div>
+                            <button class="btn-danger" onclick="deleteDocument('${doc.doc_id}')">Delete</button>
+                        </div>
+                    `).join('');
+                }
+            } catch (e) {
+                console.error("Failed to fetch document warehouse list", e);
+            }
+        }
+
+        async function deleteDocument(docId) {
+            if (!confirm("Are you sure you want to delete this document from the vector store index?")) return;
+            
+            try {
+                const res = await fetch(`/api/documents/${docId}`, { method: 'DELETE' });
+                if (res.ok) {
+                    appendBotMessage(`Document removed from active index.`);
+                    fetchDocuments();
+                    checkSystemStatus();
+                } else {
+                    const err = await res.json();
+                    alert(`Deletion failed: ${err.detail}`);
+                }
+            } catch (e) {
+                alert(`Error deleting document: ${e.message}`);
+            }
+        }
+
+        // Chat Conversation logic
+        function handleKeyPress(e) {
+            if (e.key === 'Enter') {
+                submitQuery();
+            }
+        }
+
+        function appendUserMessage(text) {
+            const msg = document.createElement('div');
+            msg.className = 'message message-user';
+            msg.innerHTML = `<div class="message-content">${escapeHTML(text)}</div>`;
+            chatMessages.insertBefore(msg, chatLoader);
+            scrollToBottom();
+        }
+
+        function appendBotMessage(markdown) {
+            const msg = document.createElement('div');
+            msg.className = 'message message-bot';
+            msg.innerHTML = `<div class="message-content">${formatMarkdown(markdown)}</div>`;
+            chatMessages.insertBefore(msg, chatLoader);
+            scrollToBottom();
+        }
+
+        function scrollToBottom() {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function escapeHTML(text) {
+            return text.replace(/[&<>"']/g, function(m) {
+                return {
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#039;'
+                }[m];
+            });
+        }
+
+        // Minimal bold/italic markdown formatter
+        function formatMarkdown(text) {
+            if (!text) return "";
+            let html = escapeHTML(text);
+            
+            // Bold
+            html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            
+            // Bullets
+            html = html.replace(/^\* (.*?)$/gm, '• $1');
+            
+            return html;
+        }
+
+        async function submitQuery() {
+            const query = chatInput.value.trim();
+            if (!query) return;
+
+            // Save settings in case weights/provider changed mid-session
+            saveSettingsToLocal();
+            
+            // Append user query message
+            appendUserMessage(query);
+            chatInput.value = '';
+            
+            // Show bot loader
+            chatLoader.style.display = 'block';
+            scrollToBottom();
+
+            // Prepare API payload
+            const payload = {
+                query: query,
+                top_k: parseInt(topKInput.value),
+                search_mode: searchModeSelect.value,
+                hybrid_weight: parseFloat(hybridWeightInput.value),
+                provider: providerSelect.value,
+                api_key: apiKeyInput.value,
+                model_name: providerSelect.value === 'gemini' ? geminiModelInput.value : (providerSelect.value === 'ollama' ? ollamaModelInput.value : '')
+            };
+
+            try {
+                const res = await fetch('/api/query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                chatLoader.style.display = 'none';
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    appendBotMessage(data.answer);
+                    renderExplorer(data.contexts, query);
+                } else {
+                    const err = await res.json();
+                    throw new Error(err.detail || 'Failed to fetch query response');
+                }
+            } catch (e) {
+                chatLoader.style.display = 'none';
+                appendBotMessage(`**Error querying RAG server:** ${e.message}\n\n*Check that the backend is running and configurations are set correctly.*`);
+            }
+        }
+
+        // Retrieval Explorer Visualizer
+        function renderExplorer(contexts, query) {
+            if (!contexts || contexts.length === 0) {
+                explorerGrid.innerHTML = `<div class="empty-explorer">No chunks matched this query.</div>`;
+                return;
+            }
+
+            explorerGrid.innerHTML = contexts.map((c, i) => {
+                // Highlight words from the query in the chunk
+                let bodyHtml = escapeHTML(c.content);
+                const queryWords = query.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+                
+                queryWords.forEach(word => {
+                    const regex = new RegExp(`(${escapeRegExp(word)})`, 'gi');
+                    bodyHtml = bodyHtml.replace(regex, '<mark>$1</mark>');
+                });
+
+                let scoreLabel = `Score: ${c.score.toFixed(3)}`;
+                if (searchModeSelect.value === 'hybrid') {
+                    scoreLabel = `Blended: ${c.score.toFixed(3)} (V:${c.vector_score.toFixed(2)} | L:${c.lexical_score.toFixed(2)})`;
+                }
+
+                return `
+                    <div class="chunk-card">
+                        <div class="chunk-header">
+                            <span class="chunk-source" title="${c.doc_title}">${c.doc_title}</span>
+                            <span class="chunk-score">${scoreLabel}</span>
+                        </div>
+                        <div class="chunk-body">
+                            ${bodyHtml}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function escapeRegExp(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+    </script>
+</body>
+</html>
