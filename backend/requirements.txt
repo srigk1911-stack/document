@@ -3,7 +3,6 @@ uvicorn
 pydantic
 pypdf
 python-docx
-sentence-transformers
 google-generativeai
 numpy
 scikit-learn
