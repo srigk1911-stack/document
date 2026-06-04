@@ -8,8 +8,12 @@ from sklearn.metrics.pairwise import cosine_similarity
 import google.generativeai as genai
 
 # Save/load file paths
-DB_DIR = os.path.join(os.path.dirname(__file__), "data")
-DB_FILE = os.path.join(DB_DIR, "db.json")
+if os.environ.get("VERCEL"):
+    DB_DIR = "/tmp"
+    DB_FILE = "/tmp/db.json"
+else:
+    DB_DIR = os.path.join(os.path.dirname(__file__), "data")
+    DB_FILE = os.path.join(DB_DIR, "db.json")
 
 class RAGPipeline:
     def __init__(self):
@@ -36,7 +40,10 @@ class RAGPipeline:
         try:
             from sentence_transformers import SentenceTransformer
             # Set caching directory within scratch folder to avoid root permission issues
-            cache_dir = os.path.join(os.path.dirname(__file__), ".cache")
+            if os.environ.get("VERCEL"):
+                cache_dir = "/tmp/.cache"
+            else:
+                cache_dir = os.path.join(os.path.dirname(__file__), ".cache")
             os.makedirs(cache_dir, exist_ok=True)
             os.environ["HF_HOME"] = cache_dir
             
